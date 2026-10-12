@@ -170,3 +170,196 @@ def run_pipeline(
         "candidate_files": {key: str(path) for key, path in candidate_files.items()},
         "proteins": results,
     }
+
+def main():
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description=(
+            "HMG: Functional and phylogenetic classification "
+            "of metagenomic reads using OrfM, MMseqs2 and EPA-ng."
+        ),
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+
+    # --------------------------------------------------
+    # Required arguments
+    # --------------------------------------------------
+
+    parser.add_argument(
+        "-i", "--input",
+        required=True,
+        type=Path,
+        help="Input metagenome in FASTQ or FASTQ.GZ format",
+    )
+
+    parser.add_argument(
+        "-r", "--references",
+        required=True,
+        type=Path,
+        help="Directory containing protein reference packages",
+    )
+
+    parser.add_argument(
+        "-o", "--output",
+        required=True,
+        type=Path,
+        help="Output directory",
+    )
+
+    # --------------------------------------------------
+    # General parameters
+    # --------------------------------------------------
+
+    parser.add_argument(
+        "-t", "--threads",
+        type=int,
+        default=8,
+        help="Number of threads for MMseqs2 and EPA-ng",
+    )
+
+    parser.add_argument(
+        "--extraction-workers",
+        type=int,
+        default=4,
+        help="Number of parallel candidate extraction processes",
+    )
+
+    # --------------------------------------------------
+    # OrfM parameters
+    # --------------------------------------------------
+
+    parser.add_argument(
+        "--min-orf-length",
+        type=int,
+        default=96,
+        help="Minimum ORF length in nucleotides",
+    )
+
+    parser.add_argument(
+        "--genetic-code",
+        type=int,
+        default=11,
+        help="NCBI genetic code for ORF translation",
+    )
+
+    # --------------------------------------------------
+    # MMseqs2 parameters
+    # --------------------------------------------------
+
+    parser.add_argument(
+        "--sensitivity",
+        type=float,
+        default=5.7,
+        help="MMseqs2 search sensitivity",
+    )
+
+    parser.add_argument(
+        "--max-evalue",
+        type=float,
+        default=1e-5,
+        help="Maximum MMseqs2 E-value",
+    )
+
+    parser.add_argument(
+        "--max-hits",
+        type=int,
+        default=10,
+        help="Maximum number of MMseqs2 hits per ORF",
+    )
+
+    # --------------------------------------------------
+    # EPA-ng parameters
+    # --------------------------------------------------
+
+    parser.add_argument(
+        "--model",
+        type=str,
+        default="LG+G4",
+        help="Amino acid substitution model for EPA-ng",
+    )
+
+    # --------------------------------------------------
+    # Classification parameters
+    # --------------------------------------------------
+
+    parser.add_argument(
+        "--min-lwr",
+        type=float,
+        default=0.75,
+        help="Minimum summed likelihood weight ratio for classification",
+    )
+
+    args = parser.parse_args()
+
+    # --------------------------------------------------
+    # Validate parameters
+    # --------------------------------------------------
+
+    if args.threads < 1:
+        parser.error("--threads must be >= 1")
+
+    if args.extraction_workers < 1:
+        parser.error("--extraction-workers must be >= 1")
+
+    if args.max_hits < 1:
+        parser.error("--max-hits must be >= 1")
+
+    if args.max_evalue <= 0:
+        parser.error("--max-evalue must be > 0")
+
+    if not 0 <= args.min_lwr <= 1:
+        parser.error("--min-lwr must be between 0 and 1")
+
+    if not args.input.is_file():
+        parser.error(f"Input FASTQ not found: {args.input}")
+
+    if not args.references.is_dir():
+        parser.error(
+            f"Reference directory not found: {args.references}"
+        )
+
+    # --------------------------------------------------
+    # Logging
+    # --------------------------------------------------
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s | %(levelname)s | %(message)s",
+    )
+
+    # --------------------------------------------------
+    # Run pipeline
+    # --------------------------------------------------
+
+    try:
+        results = run_pipeline(
+            input_fastq=args.input,
+            reference_dir=args.references,
+            output_dir=args.output,
+            threads=args.threads,
+            extraction_workers=args.extraction_workers,
+            min_orf_length=args.min_orf_length,
+            genetic_code=args.genetic_code,
+            sensitivity=args.sensitivity,
+            max_evalue=args.max_evalue,
+            max_hits=args.max_hits,
+            model=args.model,
+            min_lwr=args.min_lwr,
+        )
+
+    except Exception:
+        logging.exception("HMG pipeline failed")
+        raise SystemExit(1)
+
+    logging.info("Pipeline completed successfully")
+    logging.info("ORF FASTA: %s", results["orf_fasta"])
+    logging.info("Best hits: %s", results["best_hits_file"])
+    logging.info(
+        "Protein families processed: %d",
+        len(results["proteins"]),
+    )
+
+
+if __name__ == "__main__":
+    main()
